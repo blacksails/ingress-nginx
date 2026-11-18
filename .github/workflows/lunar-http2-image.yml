@@ -23,15 +23,15 @@ jobs:
           cache: false
       - name: Test backports with AddressSanitizer
         run: make -C images/nginx test TESTS="t/h2_security.t t/harness.t h2_http2.t h2_keepalive.t h2_request_body.t h2_priority.t h2_ssl.t h2_ssl_verify_client.t proxy.t"
-      - name: Build nginx and all bundled modules together
-        run: docker build --platform linux/amd64 -t "$BASE_IMAGE" images/nginx/rootfs
       - name: Build controller binaries
         env:
           PKG: k8s.io/ingress-nginx
           ARCH: amd64
           COMMIT_SHA: ${{ github.sha }}
           REPO_INFO: https://github.com/${{ github.repository }}
-        run: sh build/build.sh
+        run: bash build/build.sh
+      - name: Build nginx and all bundled modules together
+        run: docker build --platform linux/amd64 -t "$BASE_IMAGE" images/nginx/rootfs
       - name: Build controller image
         run: |
           docker build --platform linux/amd64 \
