@@ -1,3 +1,8 @@
+> [!WARNING]
+> This branch contains community backports for CVE-2026-123007 and CVE-2026-123633.
+> See [build, test and deployment notes](docs/reference/http2-security-backport.md).
+> It is not an official Chainguard image or security certification.
+
 > [!IMPORTANT]
 > This is a supported replacement of the original [kubernetes/ingress-nginx](https://github.com/kubernetes/ingress-nginx) repository, which was archived on March 24, 2026.
 >

@@ -1,0 +1,70 @@
+name: Build patched HTTP2 controller image
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      TAG: v1.15.14-lunar.1
+      IMAGE: ghcr.io/${{ github.repository_owner }}/ingress-nginx-controller:v1.15.14-lunar.1
+      BASE_IMAGE: local/ingress-nginx-base:http2-patched
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
+        with:
+          go-version-file: GOLANG_VERSION
+          cache: false
+      - name: Test backports with AddressSanitizer
+        run: make -C images/nginx test TESTS="t/h2_security.t t/harness.t h2_http2.t h2_keepalive.t h2_request_body.t h2_priority.t h2_ssl.t h2_ssl_verify_client.t proxy.t"
+      - name: Build nginx and all bundled modules together
+        run: docker build --platform linux/amd64 -t "$BASE_IMAGE" images/nginx/rootfs
+      - name: Build controller binaries
+        env:
+          PKG: k8s.io/ingress-nginx
+          ARCH: amd64
+          COMMIT_SHA: ${{ github.sha }}
+          REPO_INFO: https://github.com/${{ github.repository }}
+        run: sh build/build.sh
+      - name: Build controller image
+        run: |
+          docker build --platform linux/amd64 \
+            --build-arg BASE_IMAGE="$BASE_IMAGE" \
+            --build-arg TARGETARCH=amd64 \
+            --build-arg VERSION="$TAG" \
+            --build-arg COMMIT_SHA="$GITHUB_SHA" \
+            --label org.opencontainers.image.source="https://github.com/$GITHUB_REPOSITORY" \
+            -t "$IMAGE" rootfs
+      - name: Smoke-test runtime, modules and shutdown path as UID 101
+        run: |
+          docker run --rm --entrypoint sh "$IMAGE" -ec '
+            test "$(id -u)" = 101
+            /nginx-ingress-controller --version
+            nginx -V
+            for module in /etc/nginx/modules/*.so; do
+              printf "load_module %s;\n" "$module"
+            done > /tmp/smoke.conf
+            printf "%s\n" \
+              "pid /tmp/nginx-smoke.pid;" \
+              "error_log stderr notice;" \
+              "events {}" \
+              "http { access_log off; init_by_lua_block { require(\"resty.core\"); require(\"cjson.safe\") } server { listen 18080; location / { return 200 \"ok\"; } } }" \
+              >> /tmp/smoke.conf
+            nginx -t -c /tmp/smoke.conf
+            nginx -c /tmp/smoke.conf
+            test "$(wget -qO- http://127.0.0.1:18080/)" = ok
+            /usr/local/openresty/nginx/sbin/nginx -c /tmp/smoke.conf -s quit
+          '
+      - name: Push image to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push "$IMAGE"
+          docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE" >> "$GITHUB_STEP_SUMMARY"
