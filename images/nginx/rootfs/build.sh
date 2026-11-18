@@ -535,6 +535,23 @@ export OTEL_TEMP_INSTALL=/tmp/otel
 mkdir -p ${OTEL_TEMP_INSTALL}
 
 cd ${BUILD_PATH}/opentelemetry-cpp-contrib-${OPENTELEMETRY_CONTRIB_COMMIT}/instrumentation/nginx
+# The module must use our patched headers, not download an ABI-incompatible tree.
+cat > nginx.cmake <<EOF
+add_custom_target(project_nginx)
+set(NGINX_DIR "${BUILD_PATH}/nginx-${NGINX_VERSION}")
+set(NGINX_INCLUDE_DIRS
+  \${NGINX_DIR}/objs
+  \${NGINX_DIR}/src/core
+  \${NGINX_DIR}/src/os/unix
+  \${NGINX_DIR}/src/event
+  \${NGINX_DIR}/src/event/quic
+  \${NGINX_DIR}/src/http
+  \${NGINX_DIR}/src/http/modules
+  \${NGINX_DIR}/src/http/v2
+  \${NGINX_DIR}/src/http/v3
+  \${NGINX_DIR}/src/stream
+)
+EOF
 mkdir -p build
 cd build
 cmake -DCMAKE_BUILD_TYPE=Release \
@@ -542,7 +559,6 @@ cmake -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_CXX_STANDARD=17 \
         -DCMAKE_INSTALL_PREFIX=${OTEL_TEMP_INSTALL} \
         -DBUILD_SHARED_LIBS=ON \
-        -DNGINX_VERSION=${NGINX_VERSION} \
         ..
 cmake --build . -j ${CORES} --target install
 
